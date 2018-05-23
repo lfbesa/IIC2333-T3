@@ -16,16 +16,16 @@ int main(int argc, char** argv)
     	return 1;
 	}
 
-	/* Abrimos el archivo en modo lectura */
-	FILE *disk;
+	
 
-	disk = fopen(argv[1],"rb");  // r for read, b for binary
 	
 	cz_ls(argv[1]);
-	printf("%d\n", cz_exists(argv[1], "ros"));
-	cz_mv(argv[1], "res", "ros");
-	czFILE* file = cz_open(argv[1], "abcd", 'w');
-	
+	printf("%d\n", cz_exists(argv[1], "texto.txt"));
+	cz_mv(argv[1], "texto.txt", "text.txt");
+	czFILE* file = cz_open(argv[1], "text.txt", 'w');
+	char buf[102];
+	printf("%ld\n", sizeof("hila"));
+	cz_write(argv[1], file, "hila", sizeof("hila"));
 
-	fclose(disk);  
+	return 0;
 }

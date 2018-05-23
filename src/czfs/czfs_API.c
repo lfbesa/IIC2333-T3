@@ -21,6 +21,7 @@ typedef struct TIMESTAMP_32_B_S
 
 
 czFILE* cz_open(char *disco, char* filename, char mode){
+	printf("%s\n", "---- open -----");
 	FILE *disk;
 	disk = fopen(disco,"r+b");
 	int existe = -1;
@@ -39,10 +40,12 @@ czFILE* cz_open(char *disco, char* filename, char mode){
 	memcpy( valid, &buffer[0], 1);
 	memcpy( name, &buffer[1], 11);
 	memcpy( indic, &buffer[12], 4);
+
+
+	int donde_escribir_nombre=-1;
 	
-	
-	if (*valid==1){
-		while ((*valid==1) && (ftell(disk)<=1024)){
+	while ( ftell(disk)<=1024){
+		if (*valid == 1){
 			if (strcmp(name,filename) == 0){
 				if (mode=='r'){
 					existe = 1;
@@ -54,13 +57,16 @@ czFILE* cz_open(char *disco, char* filename, char mode){
 					return NULL;
 				}
 			}
-			
-			fread(buffer,16,1,disk);
-
-			memcpy( valid, &buffer[0], 1);
-			memcpy( name, &buffer[1], 11);
-			memcpy( indic, &buffer[12], 4);
 		}
+		else if (*valid == 0 && donde_escribir_nombre < 0){
+			donde_escribir_nombre = ftell(disk) - 16;
+		}
+			
+		fread(buffer,16,1,disk);
+
+		memcpy( valid, &buffer[0], 1);
+		memcpy( name, &buffer[1], 11);
+		memcpy( indic, &buffer[12], 4);
 	}
 
 	if (mode == 'r'){
@@ -82,10 +88,11 @@ czFILE* cz_open(char *disco, char* filename, char mode){
 		fread(bloq_ind,1024,1,disk);
 		memcpy(tam, &bloq_ind[0], 4);
 		file->tamano = (tam[2]<<24)+(tam[2]<<16)+(tam[2]<<8)+tam[3];
-		printf("%d\n", tam);
+		printf("%d\n",(tam[2]<<24)+(tam[2]<<16)+(tam[2]<<8)+tam[3]);
 		fclose(disk); 
 		return file;
 	} else if (mode== 'w'){
+		fseek(disk, donde_escribir_nombre, SEEK_SET);
 		//Crear archivo nuevo en disco
 		char new_name[11];
 		for (int i = 0;i<11;i++){
@@ -93,8 +100,9 @@ czFILE* cz_open(char *disco, char* filename, char mode){
 		}
 		int large = sizeof(filename);
 		memcpy( new_name, filename, large);
+		printf("%s\n", new_name);
 		int valido = 1;
-		fwrite(&valido,sizeof(int),1, disk);
+		fwrite(&valido,1,1, disk);
 		fwrite(new_name, 11, 1, disk);
 		long int current = ftell(disk);
 
@@ -117,7 +125,8 @@ czFILE* cz_open(char *disco, char* filename, char mode){
     				bitmaps[n] = (bitmaps[n] -1)/2;
     				bit++;
 				}
-				bloque = 8*n + (8-bit); 
+				bloque = 8*n + (8-bit);
+				printf("%d\n", bloque); 
 				bitmaps[n] = numero;
 				break;
 			}
@@ -142,12 +151,17 @@ czFILE* cz_open(char *disco, char* filename, char mode){
 
    		//escribir bloque indice y retornar 
 		fseek(disk, current, SEEK_SET);
-		fwrite(&bloque,sizeof(int),1, disk);
+		unsigned char bloque_char[4];
+		bloque_char[0] = (bloque >> 24) & 0xFF;
+		bloque_char[1] = (bloque >> 16) & 0xFF;
+		bloque_char[2] = (bloque >> 8) & 0xFF;
+		bloque_char[3] = bloque & 0xFF;
+		fwrite(bloque_char, 4,1,disk);
 		czFILE* file = calloc(1,sizeof(czFILE));
-		file->dondevoy=0;
+		file->dondevoy=1023;
 		file->indice = bloque;
 		file->bloque = 0;
-		file->mode = 0;
+		file->mode = 1;
 		file->tamano = 0;
 		memcpy( file->nombre, new_name, 11);
 		fclose(disk);
@@ -161,6 +175,7 @@ czFILE* cz_open(char *disco, char* filename, char mode){
 }
 
 int cz_exists(char *disco, char* filename){
+	printf("%s\n", "---- exists -----");
 	FILE *disk;
 	disk = fopen(disco,"rb");  
 
@@ -180,43 +195,59 @@ int cz_exists(char *disco, char* filename){
 	memcpy( indice, &buffer[12], 4);
 	
 	
-	if (*valid==1){
-		while ((*valid==1) && (ftell(disk)<=1024)){
+	while ( (ftell(disk)<=1024)){
+		if (*valid == 1){
 			if (strcmp(name,filename) == 0){
 				return 1;
 			}
-
-
-			fread(buffer,16,1,disk);
-
-
-			memcpy( valid, &buffer[0], 1);
-			memcpy( name, &buffer[1], 11);
-			memcpy( indice, &buffer[12], 4);
 		}
+
+		fread(buffer,16,1,disk);
+
+
+		memcpy( valid, &buffer[0], 1);
+		memcpy( name, &buffer[1], 11);
+		memcpy( indice, &buffer[12], 4);
+		
 	}
 	fclose(disk); 
 	return 0;
 }
 
 int cz_read(char *disco, czFILE* file_desc, void* buffer, int nbytes){
-	printf("Timestamp: %d\n",(int)time(NULL));
+	if (file_desc == NULL){
+		char algo[nbytes];
+		for (int n=0; n<nbytes;n++){
+			algo[n] = 0;
+		}
+		memcpy(buffer, algo, nbytes);
+		return -1;
+	}
+	printf("%s\n", "---- read -----");
 	FILE *disk;
 	disk = fopen(disco,"rb");
 	fseek(disk, 1024*(file_desc->indice), SEEK_SET);
 	unsigned char bloq_ind[1024];
 	fread(bloq_ind,1024,1,disk);
 	if (file_desc->mode){
+		fprintf(stderr,"cz_read: %s modo de abierto en  'w' \n", file_desc->nombre);
 		return -1;
 	}
 
 	//termina archivo
 	if (((file_desc->bloque)*1024 + (file_desc->dondevoy)) >= (file_desc->tamano)){
+		char algo[nbytes];
+		printf("%s\n", "fin archivo");
+		for (int n=0; n<nbytes;n++){
+			algo[n] = 0;
+		}
+		memcpy(buffer, algo, nbytes);
 		fclose(disk);
 		return 0;
 	}
 	// no queda sufic archivo para nbytes
 	else if (((file_desc->bloque)*1024 + (file_desc->dondevoy) + nbytes)>= (file_desc->tamano)){
+		printf("%s\n","no sufic" );
 		int a_leer = file_desc->tamano - ((file_desc->bloque)*1024 + (file_desc->dondevoy));
 		if (file_desc->bloque > 251){
 			int bloq_indirec = (bloq_ind[12 + 252*4 + 2]<<8)+bloq_ind[12 + 252*4+ 3];
@@ -338,6 +369,11 @@ int cz_read(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 }
 
 int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes){
+	if (file_desc == NULL){
+		
+		return -1;
+	}
+	printf("%s\n", "---- write -----");
 	FILE *disk;
 	disk = fopen(disco,"r+b");
 	if (!(file_desc->mode)){
@@ -348,8 +384,14 @@ int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 	unsigned char bloq_ind[1024];
 	fread(bloq_ind,1024,1,disk);
 	int bloq_indirec = (bloq_ind[12 + 252*4 + 2]<<8)+bloq_ind[12 + 252*4+ 3];
-	
-	if (file_desc->dondevoy + nbytes > 1023){
+
+	unsigned char times[4];
+	memcpy(times, bloq_ind, 4);
+	if (file_desc->tamano==0){
+		printf("%s\n", times);
+		printf("%d\n", bloq_indirec);
+	}
+	else if (file_desc->dondevoy + nbytes > 1023){
 		int primero = 1024 - file_desc->dondevoy;
 		int segundo = nbytes - primero;
 		unsigned char escrib1[primero];
@@ -388,6 +430,7 @@ int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 }
 
 int cz_close(char *disco, czFILE* file_desc){
+	printf("%s\n", "---- close -----");
 
 	// Escribir el TAMAÑO  FALTAA
 	int nuevo_tam = file_desc->tamano;
@@ -403,6 +446,7 @@ int cz_close(char *disco, czFILE* file_desc){
 }
 
 int cz_mv(char *disco, char* orig, char *dest){
+	printf("%s\n", "---- mv -----");
 	FILE *disk;
 	disk = fopen(disco,"r+b");
 	int donde = -1;  
@@ -423,8 +467,8 @@ int cz_mv(char *disco, char* orig, char *dest){
 	memcpy( indice, &buffer[12], 4);
 	
 	
-	if (*valid==1){
-		while ((*valid==1) && (ftell(disk)<=1024)){
+	while ( (ftell(disk)<=1024)){
+		if (*valid == 1){
 			if (strcmp(name,dest) == 0){
 				fprintf(stderr,"cz_mv: %s ya existe \n", dest);
 				return 1;
@@ -432,15 +476,15 @@ int cz_mv(char *disco, char* orig, char *dest){
 			else if (strcmp(name,orig) == 0){
 				donde = ftell(disk) - 16;
 			}
-
-
-			fread(buffer,16,1,disk);
-
-
-			memcpy( valid, &buffer[0], 1);
-			memcpy( name, &buffer[1], 11);
-			memcpy( indice, &buffer[12], 4);
 		}
+
+
+		fread(buffer,16,1,disk);
+
+
+		memcpy( valid, &buffer[0], 1);
+		memcpy( name, &buffer[1], 11);
+		memcpy( indice, &buffer[12], 4);
 	}
 	if (donde==-1)
 	{
@@ -461,18 +505,21 @@ int cz_mv(char *disco, char* orig, char *dest){
 }
 
 int cz_cp(char *disco, char* orig, char* dest){
+	printf("%s\n", "---- cp -----");
 	return 1;
 }
 
 int cz_rm(char *disco, char* filename){
+	printf("%s\n", "---- rm -----");
 	return 1;
 }
 
 
 void cz_ls(char *disco){
+	printf("%s\n", "---- ls -----");
 	FILE *disk;
 	disk = fopen(disco,"rb");  // r for read, b for binary
-	
+
 	unsigned char valid[1];
 	unsigned char name[11];
 	unsigned char indice[4];
@@ -483,14 +530,14 @@ void cz_ls(char *disco){
 	
 	fread(buffer,16,1,disk);
 
-
 	memcpy( valid, &buffer[0], 1);
 	memcpy( name, &buffer[1], 11);
 	memcpy( indice, &buffer[12], 4);
 	
 	
-	if (*valid==1){
-		while ((*valid==1) && (ftell(disk)<=1024)){
+	
+	while ( (ftell(disk)<=1024)){
+		if (*valid == 1){
 			for (int i=0; i<1;i++){
 				printf("valid %u \n", valid[i]);
 			}
@@ -502,14 +549,15 @@ void cz_ls(char *disco){
 			printf("numero %d \n", number);
 
 
-			fread(buffer,16,1,disk);
-
-
-			memcpy( valid, &buffer[0], 1);
-			memcpy( name, &buffer[1], 11);
-			memcpy( indice, &buffer[12], 4);
 		}
+		fread(buffer,16,1,disk);
+
+
+		memcpy( valid, &buffer[0], 1);
+		memcpy( name, &buffer[1], 11);
+		memcpy( indice, &buffer[12], 4);
 	}
+
 	fclose(disk);  
 
 
