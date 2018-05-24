@@ -17,7 +17,6 @@ void cz_mount_disco(char *virtua){
 }
 
 void clean_buffer(char *buffer, int donde){
-	printf("%s %d \n", "clean", donde);
 	for (int j=0;j<donde - 2;j++){
 		if (buffer[j]=='\0'){
 			buffer[j] = 32;
@@ -26,10 +25,9 @@ void clean_buffer(char *buffer, int donde){
 	buffer[donde-1]='\0';
 }
 
-czFILE* cz_open(char *disco, char* filename, char mode){
-	printf("%s\n", "---- open -----");
+czFILE* cz_open(char* filename, char mode){
 	FILE *disk;
-	disk = fopen(disco,"r+b");
+	disk = fopen(discos,"r+b");
 	int existe = -1;
 
 	unsigned char valid[1];
@@ -93,13 +91,11 @@ czFILE* cz_open(char *disco, char* filename, char mode){
 		unsigned char bloq_ind[1024];
 		fread(bloq_ind,1024,1,disk);
 		memcpy(tam, bloq_ind, 4);
-		int* pInt = (int*)tam;
-		file->tamano = *pInt;
-		printf("tamaño lecura %d\n", *pInt);
+		int x = (tam[0] << 24) | (tam[1] << 16) | (tam[2] << 8) | tam[3];
+		file->tamano = x;
 		unsigned char dato[4];
 		memcpy(dato, &bloq_ind[12], 4);
 		int* pInt2 = (int*)dato;
-		printf("Dato %d\n", *pInt2);
 		fclose(disk); 
 		return file;
 	} else if (mode== 'w'){
@@ -111,7 +107,6 @@ czFILE* cz_open(char *disco, char* filename, char mode){
 		}
 		int large = sizeof(filename);
 		memcpy( new_name, filename, large);
-		printf("%s\n", new_name);
 		int valido = 1;
 		fwrite(&valido,1,1, disk);
 		fwrite(new_name, 11, 1, disk);
@@ -124,7 +119,6 @@ czFILE* cz_open(char *disco, char* filename, char mode){
 		fseek(disk, 1024, SEEK_SET);
 		int bloque;
 		for (int n=0;n<8192;n++){
-			printf("%d\n", bitmaps[n]);
 			if (bitmaps[n]!=255){
 				unsigned char bits[8];
 				int bit=0;
@@ -144,7 +138,6 @@ czFILE* cz_open(char *disco, char* filename, char mode){
 					numero += bits[i]*power;
 				}
 				bloque = 8*n + (8-bit);
-				printf("bloque indice %d\n", bloque); 
 				bitmaps[n] = numero;
 				break;
 			}
@@ -193,7 +186,6 @@ czFILE* cz_open(char *disco, char* filename, char mode){
 }
 
 int cz_exists(char* filename){
-	printf("%s\n", "---- exists -----");
 	FILE *disk;
 	disk = fopen(discos,"rb");  
 
@@ -232,18 +224,18 @@ int cz_exists(char* filename){
 	return 0;
 }
 
-int cz_read(char *disco, czFILE* file_desc, void* buffer, int nbytes){
-	if (file_desc == NULL){
+int cz_read(czFILE* file_desc, void* buffer, int nbytes){
+	if (!file_desc){
 		char algo[nbytes];
 		for (int n=0; n<nbytes;n++){
 			algo[n] = 0;
 		}
 		memcpy(buffer, algo, nbytes);
+		fprintf(stderr,"cz_read: archivo no abierto, FILE* NULL \n");
 		return -1;
 	}
-	printf("%s\n", "---- read -----");
 	FILE *disk;
-	disk = fopen(disco,"rb");
+	disk = fopen(discos,"rb");
 	fseek(disk, 1024*(file_desc->indice), SEEK_SET);
 	unsigned char bloq_ind[1024];
 	fread(bloq_ind,1024,1,disk);
@@ -255,7 +247,6 @@ int cz_read(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 	//termina archivo
 	if (((file_desc->bloque)*1024 + (file_desc->dondevoy)) >= (file_desc->tamano)){
 		char algo[nbytes];
-		printf("%s\n", "fin archivo");
 		for (int n=0; n<nbytes;n++){
 			algo[n] = 0;
 		}
@@ -267,13 +258,15 @@ int cz_read(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 	//Cambio de bloque (incluye bloque indirecto)
 	else if (file_desc->dondevoy + nbytes>=1023){
 		int numero_a_leer = nbytes;
+		int leer_primero = 1024 - file_desc->dondevoy;
 		// no queda sufic archivo para nbytes
 		if (((file_desc->bloque)*1024 + (file_desc->dondevoy) + nbytes)>= (file_desc->tamano)){
-			printf("%s\n","no sufic" );
-			int numero_a_leer = file_desc->tamano - ((file_desc->bloque)*1024 + (file_desc->dondevoy));
+			numero_a_leer = file_desc->tamano - ((file_desc->bloque)*1024 + (file_desc->dondevoy));
+			if (numero_a_leer + file_desc->dondevoy < 1024){
+				leer_primero = numero_a_leer;
+			}
 		}
 		int leidos = 0;
-		int leer_primero = 1024 - file_desc->dondevoy;
 		int bloq_indirec = (bloq_ind[12 + 252*4 + 2]<<8)+bloq_ind[12 + 252*4+ 3];
 		
 
@@ -292,7 +285,6 @@ int cz_read(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 		}
 		else {
 			int bloque_a_leer = (bloq_ind[12 + (file_desc->bloque)*4 + 2]<<8)+bloq_ind[12 + (file_desc->bloque)*4+ 3];
-			printf("bloque a leer %d\n", bloque_a_leer);
 			fseek(disk, 1024*bloque_a_leer, SEEK_SET);
 			fseek(disk, (file_desc->dondevoy), SEEK_CUR);
 			fread(&buffer[leidos], leer_primero, 1, disk);
@@ -327,14 +319,12 @@ int cz_read(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 			if (leer_primero==1024){
 				file_desc->dondevoy += 0;
 				numero_a_leer -= leer_primero;
-				printf("%d\n", numero_a_leer);
 				leidos += leer_primero;
 				file_desc->bloque+=1;
 			}
 			else {
 				file_desc->dondevoy += leer_primero;
 				numero_a_leer -= leer_primero;
-				printf("%d\n", numero_a_leer);
 				leidos += leer_primero;
 
 			}
@@ -367,7 +357,6 @@ int cz_read(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 		}
 		else {
 			int bloque_a_leer = (bloq_ind[12 + (file_desc->bloque)*4 + 2]<<8)+bloq_ind[12 + (file_desc->bloque)*4+ 3];
-			printf("%d\n", bloque_a_leer);
 			fseek(disk, 1024*bloque_a_leer, SEEK_SET);
 			fseek(disk, (file_desc->dondevoy), SEEK_CUR);
 			fread(buffer, nbytes, 1, disk);
@@ -382,14 +371,14 @@ int cz_read(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 	return -1;
 }
 
-int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes){
-	if (file_desc == NULL){
-		
+int cz_write(czFILE* file_desc, void* buffer, int nbytes){
+
+	if (!(file_desc)){
+		fprintf(stderr,"cz_write: archivo inexistente, FILE* NULL \n");
 		return -1;
 	}
-	printf("%s\n", "---- write -----");
 	FILE *disk;
-	disk = fopen(disco,"r+b");
+	disk = fopen(discos,"r+b");
 	if (!(file_desc->mode)){
 		fprintf(stderr,"cz_write: %s abierto en modo 'r' \n", file_desc->nombre);
 		return -1;
@@ -430,7 +419,6 @@ int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 					numero += bits[i]*power;
 				}
 				bloque = 8*n + (8-bit);
-				printf("bloque dato %d\n", bloque); 
 				bitmaps[n] = numero;
 				break;
 			}
@@ -476,7 +464,6 @@ int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 					numero += bits[i]*power;
 				}
 				bloque = 8*n + (8-bit);
-				printf("bloque indirecto %d\n", bloque); 
 				bitmaps[n] = numero;
 				break;
 			}
@@ -497,7 +484,6 @@ int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 		
 	}
 	else if ((file_desc->dondevoy) + nbytes > 1023){
-		printf("%s\n", "Acaa");
 		int numero_a_escribir = nbytes;
 		int escritos=0;
 		int a_escribir = 1024 - (file_desc->dondevoy);
@@ -515,14 +501,12 @@ int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 		else {
 			unsigned char algo[a_escribir];
 			memcpy(algo,&buffer[escritos] , a_escribir);
-			printf("algo: %s\n", algo);
 			int bloque_a_escribir = (bloq_ind[12 + (file_desc->bloque)*4 + 2]<<8)+bloq_ind[12 + (file_desc->bloque)*4+ 3];
 			fseek(disk, 1024*bloque_a_escribir, SEEK_SET);
 			fseek(disk, (file_desc->dondevoy), SEEK_CUR);
 			fwrite(&buffer[escritos], a_escribir, 1, disk);
 			escritos += a_escribir;
 		}
-		printf("a escrib %d y escritos %d\n", a_escribir, escritos);
 		file_desc->dondevoy = 0;
 		file_desc->tamano += a_escribir;
 		file_desc->bloque += 1;
@@ -535,8 +519,10 @@ int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 			fread(bitmaps, sizeof(unsigned char), 8192, disk);
 			fseek(disk, 1024, SEEK_SET);
 			int bloque;
+			int lleno = 1;
 			for (int n=0;n<8192;n++){
 				if (bitmaps[n]!=255){
+					lleno = 0;
 					unsigned char bits[8];
 					int bit=0;
 					for (int i = 0; i < 8; i++) {
@@ -555,10 +541,13 @@ int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 						numero += bits[i]*power;
 					}
 					bloque = 8*n + (8-bit);
-					printf("bloque dato nuevo%d\n", bloque); 
 					bitmaps[n] = numero;
 					break;
 				}
+			}
+			if (lleno){
+				fprintf(stderr, "%s\n", "Disco lleno");
+				return escritos;
 			}
 			fseek(disk, 1024, SEEK_SET);
 			fwrite(bitmaps, 8192, 1, disk);
@@ -573,7 +562,6 @@ int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 			}
 			else {
 				fseek(disk, 12 + (file_desc->indice)*1024+(file_desc->bloque)*4, SEEK_SET);
-				printf("%ld %d\n", ftell(disk), bloque);
 				unsigned char bloque_char[4];
 				bloque_char[0] = (bloque >> 24) & 0xFF;
 				bloque_char[1] = (bloque >> 16) & 0xFF;
@@ -599,9 +587,7 @@ int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 				escritos += a_escribir;
 			}
 			else {
-				printf("asi %d\n", (bloq_ind[12 + (file_desc->bloque)*4 + 2]<<8)+bloq_ind[12 + (file_desc->bloque)*4+ 3]);
 				int bloque_a_escribir = (bloq_ind[12 + (file_desc->bloque)*4 + 2]<<8)+bloq_ind[12 + (file_desc->bloque)*4+ 3];
-				printf("bloque a escribir segundo: %d\n", bloque_a_escribir);
 				fseek(disk, 1024*bloque_a_escribir, SEEK_SET);
 				fseek(disk, (file_desc->dondevoy), SEEK_CUR);
 				fwrite(&buffer[escritos], a_escribir, 1, disk);
@@ -610,23 +596,22 @@ int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 			if (a_escribir==1024){
 				file_desc->dondevoy = 0;
 				file_desc->tamano += a_escribir;
-				printf("%d\n", a_escribir);
 				file_desc->bloque += 1;
+				if ((file_desc->bloque)>507){
+					fprintf(stderr, "Archivo %s %s\n", file_desc->nombre,"no puede crecer mas");
+					return escritos;
+				}
 				numero_a_escribir -= a_escribir;
-				printf("%d\n", numero_a_escribir);
 			}
 			else {
 				file_desc->dondevoy += a_escribir;
 				file_desc->tamano += a_escribir;
-				printf("%d\n", a_escribir);
 				numero_a_escribir -= a_escribir;
-				printf("%d\n", numero_a_escribir);
 			}
 
 		}
 
 		fclose(disk);
-		printf("%d\n", escritos);
 		return escritos;
 	}
 	else {
@@ -651,22 +636,29 @@ int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 		fclose(disk);
 		return nbytes;
 	}
-	return 1;
+	return -1;
 }
 
-int cz_close(char *disco, czFILE* file_desc){
-	printf("%s\n", "---- close -----");
+int cz_close(czFILE* file_desc){
 	if (file_desc==NULL){
-		return 0;
+		fprintf(stderr,"cz_close: archivo inexistente, FILE* NULL \n");
+		return -1;
 	}
-
-	// Escribir el TAMAÑO  FALTAA
 	int nuevo_tam = file_desc->tamano;
-	FILE *disk;
-	disk = fopen(disco,"r+b");
-	fseek(disk, 1024*(file_desc->indice), SEEK_SET);
-	fwrite(&nuevo_tam, sizeof(int),1, disk);
-	fclose(disk); 
+	unsigned char tam[4];
+	tam[0] = (nuevo_tam>>24) & 0xFF;
+	tam[1] = (nuevo_tam>>16) & 0xFF;
+	tam[2] = (nuevo_tam>>8) & 0xFF;
+	tam[3] = nuevo_tam & 0xFF;
+	
+	if (file_desc->mode){
+		FILE *disk;
+		disk = fopen(discos,"r+b");
+		fseek(disk, 1024*(file_desc->indice), SEEK_SET);
+		fwrite(tam, sizeof(int),1, disk);
+		fclose(disk); 
+
+	}
 
 	free(file_desc);
 
@@ -674,7 +666,6 @@ int cz_close(char *disco, czFILE* file_desc){
 }
 
 int cz_mv(char* orig, char *dest){
-	printf("%s\n", "---- mv -----");
 	FILE *disk;
 	disk = fopen(discos,"r+b");
 	int donde = -1;  
@@ -699,6 +690,7 @@ int cz_mv(char* orig, char *dest){
 		if (*valid == 1){
 			if (strcmp(name,dest) == 0){
 				fprintf(stderr,"cz_mv: %s ya existe \n", dest);
+				fclose(disk); 
 				return 1;
 			}
 			else if (strcmp(name,orig) == 0){
@@ -717,7 +709,8 @@ int cz_mv(char* orig, char *dest){
 	if (donde==-1)
 	{
 		fprintf(stderr,"cz_mv: %s no existe \n", orig);
-		return 2;
+		fclose(disk); 
+		return 1;
 	}
 	char new_name[11];
 	for (int i = 0;i<11;i++){
@@ -729,7 +722,7 @@ int cz_mv(char* orig, char *dest){
 	fwrite(new_name, 11, 1, disk);
 
 	fclose(disk); 
-	return 1;
+	return 0;
 }
 
 int cz_cp(char *disco, char* orig, char* dest){
@@ -744,7 +737,6 @@ int cz_rm(char *disco, char* filename){
 
 
 void cz_ls(){
-	printf("%s\n", "---- ls -----");
 	FILE *disk;
 	disk = fopen(discos,"rb");  // r for read, b for binary
 
@@ -767,14 +759,11 @@ void cz_ls(){
 	while ( (ftell(disk)<=1024)){
 		if (*valid == 1){
 			for (int i=0; i<1;i++){
-				printf("valid %u \n", valid[i]);
 			}
-			printf("ftell %ld\n", ftell(disk));
 		
 			printf("%s\n", name);
 
 			int number = (indice[2]<<8)+indice[3];
-			printf("numero %d \n", number);
 
 
 		}

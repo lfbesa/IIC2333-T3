@@ -15,15 +15,15 @@ void cz_mount_disco(char *virtua);
 
 void clean_buffer(char *buffer, int donde);
 
-czFILE* cz_open(char *disco, char* filename, char mode);
+czFILE* cz_open(char* filename, char mode);
 
 int cz_exists(char* filename);
 
-int cz_read(char *disco, czFILE* file_desc, void* buffer, int nbytes);
+int cz_read(czFILE* file_desc, void* buffer, int nbytes);
 
-int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes);
+int cz_write(czFILE* file_desc, void* buffer, int nbytes);
 
-int cz_close(char *disco, czFILE* file_desc);
+int cz_close(czFILE* file_desc);
 
 int cz_mv(char* orig, char *dest);
 
