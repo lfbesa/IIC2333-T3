@@ -762,13 +762,14 @@ int cz_rm(char* filename){
 	memcpy( valid, &buffer[0], 1);
 	memcpy( name, &buffer[1], 11);
 	memcpy( indice, &buffer[12], 4);
+	int numero_bloque_indice;
 	
 	while ( (ftell(disk)<=1024)){
 		if (*valid == 1){
 			if (strcmp(name,filename) == 0){			
 				donde_en_primer = ftell(disk) - 16;
-				int numbero_bloque_indice = (indice[2]<<8)+indice[3];
-				break
+				numero_bloque_indice = (indice[2]<<8)+indice[3];
+				break;
 			}
 		}
 
@@ -780,7 +781,7 @@ int cz_rm(char* filename){
 		memcpy( name, &buffer[1], 11);
 		memcpy( indice, &buffer[12], 4);
 	}
-	if (donde==-1)
+	if (donde_en_primer==-1)
 	{
 		fprintf(stderr,"cz_rm: %s no existe \n", filename);
 		fclose(disk); 
@@ -788,18 +789,82 @@ int cz_rm(char* filename){
 	}
 	unsigned char bloque_indice[1024];
 	unsigned char bloq_indirecto[1024];
-	fseek(disk, 1024*numbero_bloque_indice, SEEK_SET);
+	fseek(disk, 1024*numero_bloque_indice, SEEK_SET);
 	fread(bloque_indice, 1024, 1, disk);
 	int numero_bloque_indirecto = (bloque_indice[1022]<<8)+bloque_indice[1023];
 	fseek(disk, 1024*numero_bloque_indirecto, SEEK_SET);
 	fread(bloq_indirecto, 1024, 1, disk);
 
+	unsigned char bloque_a_cambiar[4];
+	int numero_bloque;
+	int k=0;
+
+	for (int j=0; j<1024; j+=4){
+		memcpy(bloque_a_cambiar, &bloq_indirecto[j], 4);
+		numero_bloque = (bloque_a_cambiar[2]<<8)+bloque_a_cambiar[3];
+		if (numero_bloque !=0){
+			fseek(disk, 1024*numero_bloque, SEEK_SET);
+			fwrite(bloque_en_cero, 1024,1,disk);
+			bloques_a_modificar[k] = numero_bloque;
+			k++;
+		}
+
+	}
+	for (int j=12; j<1020; j+=4){
+		memcpy(bloque_a_cambiar, &bloque_indice[j], 4);
+		numero_bloque = (bloque_a_cambiar[2]<<8)+bloque_a_cambiar[3];
+		if (numero_bloque !=0){
+			fseek(disk, 1024*numero_bloque, SEEK_SET);
+			fwrite(bloque_en_cero, 1024,1,disk);
+			bloques_a_modificar[k] = numero_bloque;
+			k++;
+		}
+
+	}
+
+
+	//liberar bloques en bitmap
+	fseek(disk, 1024, SEEK_SET);
+	unsigned char bitmaps[8192];
+	fread(bitmaps, sizeof(unsigned char), 8192, disk);
+	
+	for (int j=0; j<508; j++){
+		if (bloques_a_modificar[j]!=0){
+			int n = bloques_a_modificar[j]/8;
+			float f = bloques_a_modificar[j]/8.0 - bloques_a_modificar[j]/8;
+			unsigned char bits[8];
+			for (int i = 0; i < 8; i++) {
+			    bits[i] = (bitmaps[n] >> i) & 1;
+			}
+			//modificar bit correspondiente
+			int a;
+			for (int l=0; l<8;l++){
+				if (l*0.125==f){
+					a = l;
+				}
+			}
+			bits[a] = 0;
 
 
 
+			int numero=0;
+			for (int i = 7; i >=0; i--) {
+				int power =  pow(2,i);
+				numero += bits[i]*power;
+			}
+			bitmaps[n] = numero;
+		}
+
+	}
+	fseek(disk, 1024, SEEK_SET);
+	fwrite(bitmaps, 8192, 1, disk);
+
+
+
+	//borrar bloque indice, indirecto y nombres
 	fseek(disk, 1024*numero_bloque_indirecto, SEEK_SET);
 	fwrite(bloque_en_cero, 1024, 1, disk);
-	fseek(disk, 1024*numbero_bloque_indice, SEEK_SET);
+	fseek(disk, 1024*numero_bloque_indice, SEEK_SET);
 	fwrite(bloque_en_cero, 1024, 1, disk);
 
 	int nombres[16];

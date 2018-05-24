@@ -33,7 +33,6 @@ int main(int argc, char** argv)
 	int a = cz_read(file, buf, 1110);
 	printf(" %s\n", buf);
 	int b = cz_read(file, buf, 10);
-	printf("a %d b %d\n",a,b );
 	cz_close(file);
 	
 	return 0;
