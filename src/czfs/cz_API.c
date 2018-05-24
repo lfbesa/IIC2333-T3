@@ -725,13 +725,19 @@ int cz_mv(char* orig, char *dest){
 	return 0;
 }
 
-int cz_cp(char *disco, char* orig, char* dest){
+int cz_cp(char* orig, char* dest){
 	printf("%s\n", "---- cp -----");
+	FILE *disk;
+	disk = fopen(discos,"r+b"); //escribir y leer en binario
+	fclose(disk);
 	return 1;
 }
 
-int cz_rm(char *disco, char* filename){
+int cz_rm(char* filename){
 	printf("%s\n", "---- rm -----");
+	FILE *disk;
+	disk = fopen(discos,"r+b"); //escribir y leer en binario
+	fclose(disk);
 	return 1;
 }
 

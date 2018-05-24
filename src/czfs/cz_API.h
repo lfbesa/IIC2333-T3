@@ -27,8 +27,8 @@ int cz_close(czFILE* file_desc);
 
 int cz_mv(char* orig, char *dest);
 
-int cz_cp(char *disco, char* orig, char* dest);
+int cz_cp(char* orig, char* dest);
 
-int cz_rm(char *disco, char* filename);
+int cz_rm(char* filename);
 
 void cz_ls();
