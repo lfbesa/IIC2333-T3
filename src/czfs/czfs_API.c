@@ -9,17 +9,8 @@
 
 #include "czfs_API.h"
 
-#pragma pack(1)
-typedef struct TIMESTAMP_32_B_S
-   {
-   uint8_t   minutes    : 6; // 0-60 (0-63 max)
-   uint8_t   hours24    : 5; // 0-23 (0-31 max)
-   uint8_t   dayOfMonth : 5; // 1-31 (0-31 max)
-   uint8_t   month      : 4; // 1-12 (0-15 max)
-   uint16_t  year       : 12; // Epoch start: 2014, Range: 2014 thru 4061
-   } TIMESTAMP_32_B_T;
-#pragma pack()
 
+#define MIN(x,y) ((x<y)?x:y)
 
 czFILE* cz_open(char *disco, char* filename, char mode){
 	printf("%s\n", "---- open -----");
@@ -407,10 +398,13 @@ int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 		fread(bitmaps, sizeof(unsigned char), 8192, disk);
 		fseek(disk, 1024, SEEK_SET);
 		int bloque;
+		int bit=0;
+		unsigned char bits[8];
+		int numero=0;
+		int power;
 		for (int n=0;n<8192;n++){
 			if (bitmaps[n]!=255){
-				unsigned char bits[8];
-				int bit=0;
+				bit = 0;
 				for (int i = 0; i < 8; i++) {
 				    bits[i] = (bitmaps[n] >> i) & 1;
 				}
@@ -421,9 +415,9 @@ int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 						break;
 					}
 				}
-				int numero=0;
+				numero = 0;
 				for (int i = 7; i >=0; i--) {
-					int power =  pow(2,i);
+					power =  pow(2,i);
 					numero += bits[i]*power;
 				}
 				bloque = 8*n + (8-bit);
@@ -449,25 +443,182 @@ int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 
 		file_desc->dondevoy += nbytes;
 		file_desc->tamano += nbytes;
+
+		//Escribir bloque indirecto
+		fseek(disk, 1024, SEEK_SET);
+		fread(bitmaps, sizeof(unsigned char), 8192, disk);
+		fseek(disk, 1024, SEEK_SET);
+		for (int n=0;n<8192;n++){
+			if (bitmaps[n]!=255){
+				bit=0;
+				for (int i = 0; i < 8; i++) {
+				    bits[i] = (bitmaps[n] >> i) & 1;
+				}
+				for (int i = 7; i >=0; i--) {
+					if (bits[i]==0){
+						bit=i;
+						bits[i] = 1;
+						break;
+					}
+				}
+				numero=0;
+				for (int i = 7; i >=0; i--) {
+					power =  pow(2,i);
+					numero += bits[i]*power;
+				}
+				bloque = 8*n + (8-bit);
+				printf("bloque indirecto %d\n", bloque); 
+				bitmaps[n] = numero;
+				break;
+			}
+		}
+		fseek(disk, 1024, SEEK_SET);
+		fwrite(bitmaps, 8192, 1, disk);
+
+	    //escribir bloque de datos y retornar 
+		fseek(disk, 1020 + (file_desc->indice)*1024, SEEK_SET);
+		bloque_char[0] = (bloque >> 24) & 0xFF;
+		bloque_char[1] = (bloque >> 16) & 0xFF;
+		bloque_char[2] = (bloque >> 8) & 0xFF;
+		bloque_char[3] = bloque & 0xFF;
+		fwrite(bloque_char, 4,1,disk);
 		fclose(disk);
 		
 		return nbytes; 
 		
 	}
 	else if ((file_desc->dondevoy) + nbytes > 1023){
-		printf("%d    %d\n", file_desc->dondevoy, nbytes);
-		printf("%s\n","cccc" );
-		int primero = 1024 - file_desc->dondevoy;
-		int segundo = nbytes - primero;
-		unsigned char escrib1[primero];
-		unsigned char escrib2[segundo];
-		memcpy( escrib1, &buffer[0], primero);
-		memcpy( escrib2, &buffer[primero], segundo);
+		printf("%s\n", "Acaa");
+		int numero_a_escribir = nbytes;
+		int escritos=0;
+		int a_escribir = 1024 - (file_desc->dondevoy);
+		if (file_desc->bloque > 251){
+			fseek(disk, 1024*bloq_indirec, SEEK_SET);
+			fseek(disk, ((file_desc->bloque) - 252)*4  , SEEK_CUR);
+			unsigned char bloq[4];
+			fread(bloq, 4,1,disk);
+			int bloque_a_escribir = (bloq[2]<<8)+bloq[3];
+			fseek(disk, 1024*bloque_a_escribir, SEEK_SET);
+			fseek(disk, (file_desc->dondevoy), SEEK_CUR);
+			fwrite(&buffer[escritos], a_escribir, 1, disk);
+			escritos += a_escribir;
+		}
+		else {
+			unsigned char algo[a_escribir];
+			memcpy(algo,&buffer[escritos] , a_escribir);
+			printf("algo: %s\n", algo);
+			int bloque_a_escribir = (bloq_ind[12 + (file_desc->bloque)*4 + 2]<<8)+bloq_ind[12 + (file_desc->bloque)*4+ 3];
+			fseek(disk, 1024*bloque_a_escribir, SEEK_SET);
+			fseek(disk, (file_desc->dondevoy), SEEK_CUR);
+			fwrite(&buffer[escritos], a_escribir, 1, disk);
+			escritos += a_escribir;
+		}
+		printf("a escrib %d y escritos %d\n", a_escribir, escritos);
+		file_desc->dondevoy = 0;
+		file_desc->tamano += a_escribir;
+		file_desc->bloque += 1;
+		numero_a_escribir -= a_escribir;
+		while (numero_a_escribir > 0){
 
-		//falta esto
+			//Buscar nuevo bloque
+			fseek(disk, 1024, SEEK_SET);
+			unsigned char bitmaps[8192];
+			fread(bitmaps, sizeof(unsigned char), 8192, disk);
+			fseek(disk, 1024, SEEK_SET);
+			int bloque;
+			for (int n=0;n<8192;n++){
+				if (bitmaps[n]!=255){
+					unsigned char bits[8];
+					int bit=0;
+					for (int i = 0; i < 8; i++) {
+					    bits[i] = (bitmaps[n] >> i) & 1;
+					}
+					for (int i = 7; i >=0; i--) {
+						if (bits[i]==0){
+							bit=i;
+							bits[i] = 1;
+							break;
+						}
+					}
+					int numero=0;
+					for (int i = 7; i >=0; i--) {
+						int power =  pow(2,i);
+						numero += bits[i]*power;
+					}
+					bloque = 8*n + (8-bit);
+					printf("bloque dato nuevo%d\n", bloque); 
+					bitmaps[n] = numero;
+					break;
+				}
+			}
+			fseek(disk, 1024, SEEK_SET);
+			fwrite(bitmaps, 8192, 1, disk);
+			if (file_desc->bloque > 251){
+				fseek(disk, bloq_indirec*1024+(252 - file_desc->bloque)*4, SEEK_SET);
+				unsigned char bloque_char[4];
+				bloque_char[0] = (bloque >> 24) & 0xFF;
+				bloque_char[1] = (bloque >> 16) & 0xFF;
+				bloque_char[2] = (bloque >> 8) & 0xFF;
+				bloque_char[3] = bloque & 0xFF;
+				fwrite(bloque_char, 4,1,disk);
+			}
+			else {
+				fseek(disk, 12 + (file_desc->indice)*1024+(file_desc->bloque)*4, SEEK_SET);
+				printf("%ld %d\n", ftell(disk), bloque);
+				unsigned char bloque_char[4];
+				bloque_char[0] = (bloque >> 24) & 0xFF;
+				bloque_char[1] = (bloque >> 16) & 0xFF;
+				bloque_char[2] = (bloque >> 8) & 0xFF;
+				bloque_char[3] = bloque & 0xFF;
+				fwrite(bloque_char, 4,1,disk);
+			}
+			fseek(disk, 1024*(file_desc->indice), SEEK_SET);
+			fread(bloq_ind,1024,1,disk);
+			bloq_indirec = (bloq_ind[12 + 252*4 + 2]<<8)+bloq_ind[12 + 252*4+ 3];
+
+			//Escribir faltante en nuevo bloque
+			int a_escribir = MIN(1024, numero_a_escribir);
+			if (file_desc->bloque > 251){
+				fseek(disk, 1024*bloq_indirec, SEEK_SET);
+				fseek(disk, ((file_desc->bloque) - 252)*4  , SEEK_CUR);
+				unsigned char bloq[4];
+				fread(bloq, 4,1,disk);
+				int bloque_a_escribir = (bloq[2]<<8)+bloq[3];
+				fseek(disk, 1024*bloque_a_escribir, SEEK_SET);
+				fseek(disk, (file_desc->dondevoy), SEEK_CUR);
+				fwrite(&buffer[escritos], a_escribir, 1, disk);
+				escritos += a_escribir;
+			}
+			else {
+				printf("asi %d\n", (bloq_ind[12 + (file_desc->bloque)*4 + 2]<<8)+bloq_ind[12 + (file_desc->bloque)*4+ 3]);
+				int bloque_a_escribir = (bloq_ind[12 + (file_desc->bloque)*4 + 2]<<8)+bloq_ind[12 + (file_desc->bloque)*4+ 3];
+				printf("bloque a escribir segundo: %d\n", bloque_a_escribir);
+				fseek(disk, 1024*bloque_a_escribir, SEEK_SET);
+				fseek(disk, (file_desc->dondevoy), SEEK_CUR);
+				fwrite(&buffer[escritos], a_escribir, 1, disk);
+				escritos += a_escribir;
+			}
+			if (a_escribir==1024){
+				file_desc->dondevoy = 0;
+				file_desc->tamano += a_escribir;
+				printf("%d\n", a_escribir);
+				file_desc->bloque += 1;
+				numero_a_escribir -= a_escribir;
+				printf("%d\n", numero_a_escribir);
+			}
+			else {
+				file_desc->dondevoy += a_escribir;
+				file_desc->tamano += a_escribir;
+				printf("%d\n", a_escribir);
+				numero_a_escribir -= a_escribir;
+				printf("%d\n", numero_a_escribir);
+			}
+
+		}
 
 		fclose(disk);
-		return 1;
+		printf("%d\n", escritos);
+		return escritos;
 	}
 	else {
 		if (file_desc->bloque > 251){
