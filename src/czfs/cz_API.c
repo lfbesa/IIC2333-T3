@@ -7,10 +7,24 @@
 #include <math.h>
 #include <stdint.h>
 
-#include "czfs_API.h"
+#include "cz_API.h"
 
 
 #define MIN(x,y) ((x<y)?x:y)
+char discos[100];
+void cz_mount_disco(char *virtua){
+	memcpy(discos, virtua, strlen(virtua));
+}
+
+void clean_buffer(char *buffer, int donde){
+	printf("%s %d \n", "clean", donde);
+	for (int j=0;j<donde - 2;j++){
+		if (buffer[j]=='\0'){
+			buffer[j] = 32;
+		}
+	}
+	buffer[donde-1]='\0';
+}
 
 czFILE* cz_open(char *disco, char* filename, char mode){
 	printf("%s\n", "---- open -----");
@@ -178,10 +192,10 @@ czFILE* cz_open(char *disco, char* filename, char mode){
 	return NULL;
 }
 
-int cz_exists(char *disco, char* filename){
+int cz_exists(char* filename){
 	printf("%s\n", "---- exists -----");
 	FILE *disk;
-	disk = fopen(disco,"rb");  
+	disk = fopen(discos,"rb");  
 
 	unsigned char valid[1];
 	char name[11];
@@ -249,47 +263,19 @@ int cz_read(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 		fclose(disk);
 		return 0;
 	}
-	// no queda sufic archivo para nbytes
-	else if (((file_desc->bloque)*1024 + (file_desc->dondevoy) + nbytes)>= (file_desc->tamano)){
-		printf("%s\n","no sufic" );
-		int a_leer = file_desc->tamano - ((file_desc->bloque)*1024 + (file_desc->dondevoy));
-		if (file_desc->bloque > 251){
-			int bloq_indirec = (bloq_ind[12 + 252*4 + 2]<<8)+bloq_ind[12 + 252*4+ 3];
-
-			fseek(disk, 1024*bloq_indirec, SEEK_SET);
-			fseek(disk,((file_desc->bloque) - 252)*4  , SEEK_CUR);
-			unsigned char bloq[4];
-			fread(bloq, 4,1,disk);
-			int bloque_a_leer = (bloq[2]<<8)+bloq[3];
-			fseek(disk, 1024*bloque_a_leer, SEEK_SET);
-			fseek(disk, (file_desc->dondevoy), SEEK_CUR);
-			fread(buffer, a_leer, 1, disk);
-			file_desc->dondevoy += a_leer;
-			fclose(disk);
-			return a_leer;
-
-
-		}
-		else {
-			int bloque_a_leer = (bloq_ind[12 + (file_desc->bloque)*4 + 2]<<8)+bloq_ind[12 + (file_desc->bloque)*4+ 3];
-			fseek(disk, 1024*bloque_a_leer, SEEK_SET);
-			fseek(disk, (file_desc->dondevoy), SEEK_CUR);
-			fread(buffer, a_leer, 1, disk);
-			file_desc->dondevoy += a_leer;
-			fclose(disk);
-			return a_leer;
-		}
-		fclose(disk);
-		return a_leer;
-
-	}
+	
 	//Cambio de bloque (incluye bloque indirecto)
 	else if (file_desc->dondevoy + nbytes>=1023){
+		int numero_a_leer = nbytes;
+		// no queda sufic archivo para nbytes
+		if (((file_desc->bloque)*1024 + (file_desc->dondevoy) + nbytes)>= (file_desc->tamano)){
+			printf("%s\n","no sufic" );
+			int numero_a_leer = file_desc->tamano - ((file_desc->bloque)*1024 + (file_desc->dondevoy));
+		}
+		int leidos = 0;
 		int leer_primero = 1024 - file_desc->dondevoy;
-		int leer_segundo = nbytes - leer_primero;
 		int bloq_indirec = (bloq_ind[12 + 252*4 + 2]<<8)+bloq_ind[12 + 252*4+ 3];
-		char buffer1[leer_primero];
-		char buffer2[leer_segundo];
+		
 
 		if (file_desc->bloque > 251){
 
@@ -300,41 +286,62 @@ int cz_read(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 			int bloque_a_leer = (bloq[2]<<8)+bloq[3];
 			fseek(disk, 1024*bloque_a_leer, SEEK_SET);
 			fseek(disk, (file_desc->dondevoy), SEEK_CUR);
-			fread(buffer1, leer_primero, 1, disk);
+			fread(&buffer[leidos], leer_primero, 1, disk);
 
 
 		}
 		else {
 			int bloque_a_leer = (bloq_ind[12 + (file_desc->bloque)*4 + 2]<<8)+bloq_ind[12 + (file_desc->bloque)*4+ 3];
+			printf("bloque a leer %d\n", bloque_a_leer);
 			fseek(disk, 1024*bloque_a_leer, SEEK_SET);
 			fseek(disk, (file_desc->dondevoy), SEEK_CUR);
-			fread(buffer1, leer_primero, 1, disk);
+			fread(&buffer[leidos], leer_primero, 1, disk);
 		}
 		file_desc->dondevoy = 0;
 		file_desc->bloque += 1;
-		if (file_desc->bloque > 251){
+		leidos += leer_primero;
+		numero_a_leer -= leer_primero;
+		while (numero_a_leer > 0){
 
-			fseek(disk, 1024*bloq_indirec, SEEK_SET);
-			fseek(disk,((file_desc->bloque) - 252)*4  , SEEK_CUR);
-			unsigned char bloq[4];
-			fread(bloq, 4,1,disk);
-			int bloque_a_leer = (bloq[2]<<8)+bloq[3];
-			fseek(disk, 1024*bloque_a_leer, SEEK_SET);
-			fseek(disk, (file_desc->dondevoy), SEEK_CUR);
-			fread(buffer2, leer_segundo, 1, disk);
+			leer_primero = MIN(1024, numero_a_leer);
+
+			if (file_desc->bloque > 251){
+
+				fseek(disk, 1024*bloq_indirec, SEEK_SET);
+				fseek(disk,((file_desc->bloque) - 252)*4  , SEEK_CUR);
+				unsigned char bloq[4];
+				fread(bloq, 4,1,disk);
+				int bloque_a_leer = (bloq[2]<<8)+bloq[3];
+				fseek(disk, 1024*bloque_a_leer, SEEK_SET);
+				fseek(disk, (file_desc->dondevoy), SEEK_CUR);
+				fread(&buffer[leidos], leer_primero, 1, disk);
 
 
+			}
+			else {
+				int bloque_a_leer = (bloq_ind[12 + (file_desc->bloque)*4 + 2]<<8)+bloq_ind[12 + (file_desc->bloque)*4+ 3];
+				fseek(disk, 1024*bloque_a_leer, SEEK_SET);
+				fseek(disk, (file_desc->dondevoy), SEEK_CUR);
+				fread(&buffer[leidos], leer_primero, 1, disk);
+			}
+			if (leer_primero==1024){
+				file_desc->dondevoy += 0;
+				numero_a_leer -= leer_primero;
+				printf("%d\n", numero_a_leer);
+				leidos += leer_primero;
+				file_desc->bloque+=1;
+			}
+			else {
+				file_desc->dondevoy += leer_primero;
+				numero_a_leer -= leer_primero;
+				printf("%d\n", numero_a_leer);
+				leidos += leer_primero;
+
+			}
 		}
-		else {
-			int bloque_a_leer = (bloq_ind[12 + (file_desc->bloque)*4 + 2]<<8)+bloq_ind[12 + (file_desc->bloque)*4+ 3];
-			fseek(disk, 1024*bloque_a_leer, SEEK_SET);
-			fseek(disk, (file_desc->dondevoy), SEEK_CUR);
-			fread(buffer2, leer_segundo, 1, disk);
-		}
-		strcpy(buffer, buffer1);
-	    strcat(buffer, buffer2);
 		fclose(disk);
-		return nbytes;
+		clean_buffer(buffer, leidos);
+		return leidos;
 		
 
 	}
@@ -353,6 +360,7 @@ int cz_read(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 			fread(buffer, nbytes, 1, disk);
 			file_desc->dondevoy += nbytes;
 			fclose(disk);
+			clean_buffer(buffer, nbytes);
 			return nbytes;
 
 
@@ -365,6 +373,7 @@ int cz_read(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 			fread(buffer, nbytes, 1, disk);
 			file_desc->dondevoy += nbytes;
 			fclose(disk);
+			clean_buffer(buffer, nbytes);
 			return nbytes;
 		}
 	}
@@ -664,10 +673,10 @@ int cz_close(char *disco, czFILE* file_desc){
 	return 0;
 }
 
-int cz_mv(char *disco, char* orig, char *dest){
+int cz_mv(char* orig, char *dest){
 	printf("%s\n", "---- mv -----");
 	FILE *disk;
-	disk = fopen(disco,"r+b");
+	disk = fopen(discos,"r+b");
 	int donde = -1;  
 
 	unsigned char valid[1];
@@ -734,10 +743,10 @@ int cz_rm(char *disco, char* filename){
 }
 
 
-void cz_ls(char *disco){
+void cz_ls(){
 	printf("%s\n", "---- ls -----");
 	FILE *disk;
-	disk = fopen(disco,"rb");  // r for read, b for binary
+	disk = fopen(discos,"rb");  // r for read, b for binary
 
 	unsigned char valid[1];
 	unsigned char name[11];
