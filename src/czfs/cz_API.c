@@ -737,8 +737,82 @@ int cz_rm(char* filename){
 	printf("%s\n", "---- rm -----");
 	FILE *disk;
 	disk = fopen(discos,"r+b"); //escribir y leer en binario
+
+	int bloques_a_modificar[256+252];
+	for (int i=0;i<508;i++){
+		bloques_a_modificar[i]=0;
+	}
+
+	//Usar este bloque para reescribir los demas
+	int bloque_en_cero[256];
+	for (int i=0;i<256;i++){
+		bloque_en_cero[i]=0;
+	}
+
+
+
+	int donde_en_primer = -1;  
+	unsigned char valid[1];
+	char name[11];
+	unsigned char indice[4];
+	fseek(disk, 0, SEEK_SET);
+	unsigned char buffer[16];
+	fread(buffer,16,1,disk);
+
+	memcpy( valid, &buffer[0], 1);
+	memcpy( name, &buffer[1], 11);
+	memcpy( indice, &buffer[12], 4);
+	
+	while ( (ftell(disk)<=1024)){
+		if (*valid == 1){
+			if (strcmp(name,filename) == 0){			
+				donde_en_primer = ftell(disk) - 16;
+				int numbero_bloque_indice = (indice[2]<<8)+indice[3];
+				break
+			}
+		}
+
+
+		fread(buffer,16,1,disk);
+
+
+		memcpy( valid, &buffer[0], 1);
+		memcpy( name, &buffer[1], 11);
+		memcpy( indice, &buffer[12], 4);
+	}
+	if (donde==-1)
+	{
+		fprintf(stderr,"cz_rm: %s no existe \n", filename);
+		fclose(disk); 
+		return -1;
+	}
+	unsigned char bloque_indice[1024];
+	unsigned char bloq_indirecto[1024];
+	fseek(disk, 1024*numbero_bloque_indice, SEEK_SET);
+	fread(bloque_indice, 1024, 1, disk);
+	int numero_bloque_indirecto = (bloque_indice[1022]<<8)+bloque_indice[1023];
+	fseek(disk, 1024*numero_bloque_indirecto, SEEK_SET);
+	fread(bloq_indirecto, 1024, 1, disk);
+
+
+
+
+	fseek(disk, 1024*numero_bloque_indirecto, SEEK_SET);
+	fwrite(bloque_en_cero, 1024, 1, disk);
+	fseek(disk, 1024*numbero_bloque_indice, SEEK_SET);
+	fwrite(bloque_en_cero, 1024, 1, disk);
+
+	int nombres[16];
+	for (int i=0;i<16;i++){
+		nombres[i]=0;
+	}
+	fseek(disk, donde_en_primer, SEEK_SET);
+	fwrite(nombres, 1024, 1, disk);
+
+
+
 	fclose(disk);
-	return 1;
+	return 0;
 }
 
 
