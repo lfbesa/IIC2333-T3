@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 #include <stdint.h>
 
 #include "czfs_API.h"
@@ -86,9 +87,14 @@ czFILE* cz_open(char *disco, char* filename, char mode){
 		unsigned char tam[4];
 		unsigned char bloq_ind[1024];
 		fread(bloq_ind,1024,1,disk);
-		memcpy(tam, &bloq_ind[0], 4);
-		file->tamano = (tam[2]<<24)+(tam[2]<<16)+(tam[2]<<8)+tam[3];
-		printf("%d\n",(tam[2]<<24)+(tam[2]<<16)+(tam[2]<<8)+tam[3]);
+		memcpy(tam, bloq_ind, 4);
+		int* pInt = (int*)tam;
+		file->tamano = *pInt;
+		printf("tamaño lecura %d\n", *pInt);
+		unsigned char dato[4];
+		memcpy(dato, &bloq_ind[12], 4);
+		int* pInt2 = (int*)dato;
+		printf("Dato %d\n", *pInt2);
 		fclose(disk); 
 		return file;
 	} else if (mode== 'w'){
@@ -113,20 +119,27 @@ czFILE* cz_open(char *disco, char* filename, char mode){
 		fseek(disk, 1024, SEEK_SET);
 		int bloque;
 		for (int n=0;n<8192;n++){
+			printf("%d\n", bitmaps[n]);
 			if (bitmaps[n]!=255){
-				int numero = bitmaps[n]+1;
-				bool encontrado=true;
+				unsigned char bits[8];
 				int bit=0;
-				while (encontrado){
-					if((bitmaps[n] & 1) == 0){
-						encontrado=false;
-    					printf("EVEN!\n");
-    				}
-    				bitmaps[n] = (bitmaps[n] -1)/2;
-    				bit++;
+				for (int i = 0; i < 8; i++) {
+				    bits[i] = (bitmaps[n] >> i) & 1;
+				}
+				for (int i = 7; i >=0; i--) {
+					if (bits[i]==0){
+						bit=i;
+						bits[i] = 1;
+						break;
+					}
+				}
+				int numero=0;
+				for (int i = 7; i >=0; i--) {
+					int power =  pow(2,i);
+					numero += bits[i]*power;
 				}
 				bloque = 8*n + (8-bit);
-				printf("%d\n", bloque); 
+				printf("bloque indice %d\n", bloque); 
 				bitmaps[n] = numero;
 				break;
 			}
@@ -137,16 +150,16 @@ czFILE* cz_open(char *disco, char* filename, char mode){
 		fseek(disk, 1024*bloque, SEEK_SET);
 		time_t ltime; /* calendar time */
 	    ltime=time(NULL); /* get current cal time */
-	    TIMESTAMP_32_B_T timestamp;
-	    timestamp.hours24 = (localtime(&ltime))->tm_hour;
-	    timestamp.dayOfMonth = (localtime(&ltime))->tm_hour;
-	    timestamp.month = (localtime(&ltime))->tm_mon;
-	    timestamp.year = (localtime(&ltime))->tm_year;
-	    timestamp.minutes = (localtime(&ltime))->tm_min;
+	    // TIMESTAMP_32_B_T timestamp;
+	    // timestamp.hours24 = (localtime(&ltime))->tm_hour;
+	    // timestamp.dayOfMonth = (localtime(&ltime))->tm_hour;
+	    // timestamp.month = (localtime(&ltime))->tm_mon;
+	    // timestamp.year = (localtime(&ltime))->tm_year;
+	    // timestamp.minutes = (localtime(&ltime))->tm_min;
 	    int metadata = 0;
 	    fwrite(&metadata,sizeof(int),1, disk);
-	    fwrite(&timestamp,sizeof(TIMESTAMP_32_B_T),1, disk);
-	    fwrite(&timestamp,sizeof(TIMESTAMP_32_B_T),1, disk);
+	    fwrite(&ltime,sizeof(ltime),1, disk);
+	    fwrite(&ltime, sizeof(ltime),1, disk);
 
 
    		//escribir bloque indice y retornar 
@@ -158,7 +171,7 @@ czFILE* cz_open(char *disco, char* filename, char mode){
 		bloque_char[3] = bloque & 0xFF;
 		fwrite(bloque_char, 4,1,disk);
 		czFILE* file = calloc(1,sizeof(czFILE));
-		file->dondevoy=1023;
+		file->dondevoy=0;
 		file->indice = bloque;
 		file->bloque = 0;
 		file->mode = 1;
@@ -355,6 +368,7 @@ int cz_read(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 		}
 		else {
 			int bloque_a_leer = (bloq_ind[12 + (file_desc->bloque)*4 + 2]<<8)+bloq_ind[12 + (file_desc->bloque)*4+ 3];
+			printf("%d\n", bloque_a_leer);
 			fseek(disk, 1024*bloque_a_leer, SEEK_SET);
 			fseek(disk, (file_desc->dondevoy), SEEK_CUR);
 			fread(buffer, nbytes, 1, disk);
@@ -385,13 +399,64 @@ int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 	fread(bloq_ind,1024,1,disk);
 	int bloq_indirec = (bloq_ind[12 + 252*4 + 2]<<8)+bloq_ind[12 + 252*4+ 3];
 
-	unsigned char times[4];
-	memcpy(times, bloq_ind, 4);
-	if (file_desc->tamano==0){
-		printf("%s\n", times);
-		printf("%d\n", bloq_indirec);
+	if ((file_desc->tamano)==0){
+		
+		//Buscar lugar para su bloque indice y inicializarlo
+		fseek(disk, 1024, SEEK_SET);
+		unsigned char bitmaps[8192];
+		fread(bitmaps, sizeof(unsigned char), 8192, disk);
+		fseek(disk, 1024, SEEK_SET);
+		int bloque;
+		for (int n=0;n<8192;n++){
+			if (bitmaps[n]!=255){
+				unsigned char bits[8];
+				int bit=0;
+				for (int i = 0; i < 8; i++) {
+				    bits[i] = (bitmaps[n] >> i) & 1;
+				}
+				for (int i = 7; i >=0; i--) {
+					if (bits[i]==0){
+						bit=i;
+						bits[i] = 1;
+						break;
+					}
+				}
+				int numero=0;
+				for (int i = 7; i >=0; i--) {
+					int power =  pow(2,i);
+					numero += bits[i]*power;
+				}
+				bloque = 8*n + (8-bit);
+				printf("bloque dato %d\n", bloque); 
+				bitmaps[n] = numero;
+				break;
+			}
+		}
+		fseek(disk, 1024, SEEK_SET);
+		fwrite(bitmaps, 8192, 1, disk);
+
+		fseek(disk, 1024*bloque, SEEK_SET);
+	    fwrite(buffer,nbytes,1, disk);
+
+	    //escribir bloque de datos y retornar 
+		fseek(disk, 12 + (file_desc->indice)*1024, SEEK_SET);
+		unsigned char bloque_char[4];
+		bloque_char[0] = (bloque >> 24) & 0xFF;
+		bloque_char[1] = (bloque >> 16) & 0xFF;
+		bloque_char[2] = (bloque >> 8) & 0xFF;
+		bloque_char[3] = bloque & 0xFF;
+		fwrite(bloque_char, 4,1,disk);
+
+		file_desc->dondevoy += nbytes;
+		file_desc->tamano += nbytes;
+		fclose(disk);
+		
+		return nbytes; 
+		
 	}
-	else if (file_desc->dondevoy + nbytes > 1023){
+	else if ((file_desc->dondevoy) + nbytes > 1023){
+		printf("%d    %d\n", file_desc->dondevoy, nbytes);
+		printf("%s\n","cccc" );
 		int primero = 1024 - file_desc->dondevoy;
 		int segundo = nbytes - primero;
 		unsigned char escrib1[primero];
@@ -431,6 +496,9 @@ int cz_write(char *disco, czFILE* file_desc, void* buffer, int nbytes){
 
 int cz_close(char *disco, czFILE* file_desc){
 	printf("%s\n", "---- close -----");
+	if (file_desc==NULL){
+		return 0;
+	}
 
 	// Escribir el TAMAÑO  FALTAA
 	int nuevo_tam = file_desc->tamano;
