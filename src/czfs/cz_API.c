@@ -916,7 +916,7 @@ int cz_rm(char* filename){
 		nombres[i]=0;
 	}
 	fseek(disk, donde_en_primer, SEEK_SET);
-	fwrite(nombres, 1024, 1, disk);
+	fwrite(nombres, 16, 1, disk);
 
 
 
