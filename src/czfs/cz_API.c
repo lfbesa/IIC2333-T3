@@ -137,7 +137,7 @@ czFILE* cz_open(char* filename, char mode){
 					int power =  pow(2,i);
 					numero += bits[i]*power;
 				}
-				bloque = 8*n + (8-bit);
+				bloque = 8*n + (7-bit);
 				bitmaps[n] = numero;
 				break;
 			}
@@ -418,7 +418,7 @@ int cz_write(czFILE* file_desc, void* buffer, int nbytes){
 					power =  pow(2,i);
 					numero += bits[i]*power;
 				}
-				bloque = 8*n + (8-bit);
+				bloque = 8*n + (7-bit);
 				bitmaps[n] = numero;
 				break;
 			}
@@ -463,7 +463,7 @@ int cz_write(czFILE* file_desc, void* buffer, int nbytes){
 					power =  pow(2,i);
 					numero += bits[i]*power;
 				}
-				bloque = 8*n + (8-bit);
+				bloque = 8*n + (7-bit);
 				bitmaps[n] = numero;
 				break;
 			}
@@ -540,7 +540,7 @@ int cz_write(czFILE* file_desc, void* buffer, int nbytes){
 						int power =  pow(2,i);
 						numero += bits[i]*power;
 					}
-					bloque = 8*n + (8-bit);
+					bloque = 8*n + (7-bit);
 					bitmaps[n] = numero;
 					break;
 				}
@@ -734,7 +734,6 @@ int cz_cp(char* orig, char* dest){
 }
 
 int cz_rm(char* filename){
-	printf("%s\n", "---- rm -----");
 	FILE *disk;
 	disk = fopen(discos,"r+b"); //escribir y leer en binario
 
@@ -827,27 +826,49 @@ int cz_rm(char* filename){
 	fseek(disk, 1024, SEEK_SET);
 	unsigned char bitmaps[8192];
 	fread(bitmaps, sizeof(unsigned char), 8192, disk);
+
+	int n = numero_bloque_indirecto/8;
+	float f = numero_bloque_indirecto/8.0 - numero_bloque_indirecto/8;
+	unsigned char bits[8];
+	for (int i = 0; i < 8; i++) {
+	    bits[i] = (bitmaps[n] >> i) & 1;
+	}
+	//modificar bit correspondiente
+	int a;
+	for (int l=0; l<8;l++){
+		if (l*0.125==f){
+			a = l;
+		}
+	}
+	bits[7-a] = 0;
+
+
+
+	int numero=0;
+	for (int i = 7; i >=0; i--) {
+		int power =  pow(2,i);
+		numero += bits[i]*power;
+	}
+	bitmaps[n] = numero;
 	
 	for (int j=0; j<508; j++){
 		if (bloques_a_modificar[j]!=0){
-			int n = bloques_a_modificar[j]/8;
-			float f = bloques_a_modificar[j]/8.0 - bloques_a_modificar[j]/8;
-			unsigned char bits[8];
+			n = bloques_a_modificar[j]/8;
+			f = bloques_a_modificar[j]/8.0 - bloques_a_modificar[j]/8;
 			for (int i = 0; i < 8; i++) {
 			    bits[i] = (bitmaps[n] >> i) & 1;
 			}
 			//modificar bit correspondiente
-			int a;
 			for (int l=0; l<8;l++){
 				if (l*0.125==f){
 					a = l;
 				}
 			}
-			bits[a] = 0;
+			bits[7-a] = 0;
 
 
 
-			int numero=0;
+			numero=0;
 			for (int i = 7; i >=0; i--) {
 				int power =  pow(2,i);
 				numero += bits[i]*power;
@@ -856,6 +877,29 @@ int cz_rm(char* filename){
 		}
 
 	}
+	n = numero_bloque_indice/8;
+	f = numero_bloque_indice/8.0 - numero_bloque_indice/8;
+	for (int i = 0; i < 8; i++) {
+	    bits[i] = (bitmaps[n] >> i) & 1;
+	}
+	//modificar bit correspondiente
+	for (int l=0; l<8;l++){
+		if (l*0.125==f){
+			a = l;
+		}
+	}
+	
+	bits[7-a] = 0;
+	
+
+
+	numero=0;
+	for (int i = 7; i >=0; i--) {
+		int power =  pow(2,i);
+		numero += bits[i]*power;
+	}
+	bitmaps[n] = numero;
+
 	fseek(disk, 1024, SEEK_SET);
 	fwrite(bitmaps, 8192, 1, disk);
 

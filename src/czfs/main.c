@@ -10,7 +10,7 @@
 int main(int argc, char** argv)
 {
   /* Revisamos que los parámetros sean correctos */
-	if(argc != 3)
+	if(argc != 2)
 	{
 		printf("Uso: %s <disco virtual>\nDonde\n", argv[0]);
     	printf("\t<disco virtual> es la ruta al archivo usado como disco virtual\n");
@@ -23,8 +23,7 @@ int main(int argc, char** argv)
 	cz_ls();
 	printf("%d\n", cz_exists("texto.txt"));
 	cz_mv("texto.txt", "text.txt");
-	czFILE* file = cz_open(argv[2], 'r');
-	printf("%d\n", file->tamano);
+	czFILE* file = cz_open("ho1.txt", 'w');
 	char buf[1110];
 	
 	cz_write(file, "chao", sizeof("chao"));
@@ -33,6 +32,7 @@ int main(int argc, char** argv)
 	int a = cz_read(file, buf, 1110);
 	printf(" %s\n", buf);
 	int b = cz_read(file, buf, 10);
+	cz_rm("ho1.txt");
 	cz_close(file);
 	
 	return 0;
